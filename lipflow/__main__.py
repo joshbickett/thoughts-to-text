@@ -1,4 +1,4 @@
-"""lipflow [run] | lipflow file VIDEO | lipflow doctor"""
+"""thoughts-to-text [run] | thoughts-to-text file VIDEO | thoughts-to-text doctor"""
 from __future__ import annotations
 
 import argparse
@@ -35,7 +35,7 @@ def main(argv=None):
         from .hotkey import KEYS
         DEFAULT_KEY = "right_option"
 
-    p = argparse.ArgumentParser(prog="lipflow", description="Silent dictation by lip reading.")
+    p = argparse.ArgumentParser(prog="thoughts-to-text", description="Silent dictation with surrounding text context.")
     sub = p.add_subparsers(dest="cmd")
 
     r = sub.add_parser("run", help="start the dictation app in the menu bar / system tray (default)")
@@ -87,8 +87,8 @@ def main(argv=None):
         print(f"  saved to {PHRASES}")
         if stats["new_names"]:
             print(f"  added {len(stats['new_names'])} names/terms to {WORDS}. Review them: "
-                  "Lipflow menu → Edit custom words")
-        print("Restart Lipflow to use them.")
+                  "Thoughts to Text menu → Edit custom words")
+        print("Restart Thoughts to Text to use them.")
     elif cmd == "train-lm":
         from .train_lm import train
         r = train()

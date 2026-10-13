@@ -32,7 +32,7 @@ if sys.platform == "linux":
 else:
     from .paste import copy_text, paste_text
 
-LOG = os.path.join(HOME, "Lipflow.log")
+LOG = os.path.join(HOME, "ThoughtsToText.log")
 CAMERAS = 4  # Windows can't name cameras through OpenCV: offer the first few by number
 RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
 
@@ -113,7 +113,7 @@ class Lipflow:
         self.hud = HUD(self.root)
         self._install_key()
         self._build_tray()
-        self.hud.show("reading", "Lipflow", "Loading the lip-reading model…")
+        self.hud.show("reading", "Thoughts to Text", "Loading the lip-reading model…")
         threading.Thread(target=self._worker, name="lipflow-model", daemon=True).start()
         self.jobs.put(("load",))
         self.root.after(15, self._pump)
@@ -185,9 +185,9 @@ class Lipflow:
             Item("Edit custom words…", lambda icon, item: self._edit_words()),
             Item("Open log", lambda icon, item: self._notepad(LOG)),
             Menu.SEPARATOR,
-            Item("Quit Lipflow", lambda icon, item: self.ui(self.quit)),
+            Item("Quit Thoughts to Text", lambda icon, item: self.ui(self.quit)),
         )
-        self.icon = pystray.Icon("Lipflow", tray_image(False), "Lipflow", menu)
+        self.icon = pystray.Icon("Thoughts to Text", tray_image(False), "Thoughts to Text", menu)
         threading.Thread(target=self.icon.run, name="lipflow-tray", daemon=True).start()
 
     def _set_icon(self, listening: bool):
@@ -261,7 +261,7 @@ class Lipflow:
         import winreg
         try:
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
-                winreg.QueryValueEx(k, "Lipflow")
+                winreg.QueryValueEx(k, "Thoughts to Text")
                 return True
         except OSError:
             return False
@@ -272,9 +272,9 @@ class Lipflow:
         import winreg
         with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as k:
             if self._autostart_enabled():
-                winreg.DeleteValue(k, "Lipflow")
+                winreg.DeleteValue(k, "Thoughts to Text")
             else:
-                winreg.SetValueEx(k, "Lipflow", 0, winreg.REG_SZ, self._autostart_command())
+                winreg.SetValueEx(k, "Thoughts to Text", 0, winreg.REG_SZ, self._autostart_command())
 
     def show_setup(self, start_at: str = "welcome"):
         from .setup import Setup
@@ -433,7 +433,7 @@ class Lipflow:
             self.ui(self.hud.hide)
             self.ui(self.show_setup)
         else:
-            self.ui(self.hud.show, "done", "Lipflow is ready", f"Hold {self.key_name} and mouth your words", 2.5)
+            self.ui(self.hud.show, "done", "Thoughts to Text is ready", f"Hold {self.key_name} and mouth your words", 2.5)
 
     @property
     def whisper_on(self) -> bool:
@@ -562,7 +562,7 @@ def _already_running() -> bool:
     import ctypes
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel32.CreateMutexW.restype = ctypes.c_void_p
-    _already_running.handle = kernel32.CreateMutexW(None, False, "Local\\LipflowTray")  # held until exit
+    _already_running.handle = kernel32.CreateMutexW(None, False, "Local\\ThoughtsToTextTray")  # held until exit
     return ctypes.get_last_error() == 183  # ERROR_ALREADY_EXISTS
 
 
@@ -571,9 +571,9 @@ def run(opts: Options):
         _log_to_file()
     if sys.platform == "win32" and _already_running():
         import ctypes
-        ctypes.WinDLL("user32").MessageBoxW(None, "Lipflow is already running. Look for the pink mouth icon "
+        ctypes.WinDLL("user32").MessageBoxW(None, "Thoughts to Text is already running. Look for the pink mouth icon "
                                                   "in the system tray (you may need to click ^ to see it).",
-                                            "Lipflow", 0x40)
+                                            "Thoughts to Text", 0x40)
         return
     lf = Lipflow(opts)
     lf.start()

@@ -1,8 +1,8 @@
-/* Bundle executable for Lipflow.app.
+/* Bundle executable for Thoughts-to-Text.app.
 
 macOS ties Accessibility and Input Monitoring to the code signature of the
 process that is actually running. A shell script that execs the venv Python
-asks for those permissions as "Lipflow" and then keeps running as Python, so
+asks for those permissions as "Thoughts to Text" and then keeps running as Python, so
 the grant never satisfies the in-app check and setup cannot continue.
 
 This binary stays in memory, loads the venv's libpython, and runs
@@ -30,7 +30,7 @@ static void redirect_log(void) {
     const char *home = getenv("HOME");
     if (!home) return;
     char path[4096];
-    snprintf(path, sizeof path, "%s/Library/Logs/Lipflow.log", home);
+    snprintf(path, sizeof path, "%s/Library/Logs/ThoughtsToText.log", home);
     int fd = open(path, O_WRONLY | O_CREAT | O_APPEND, 0644);
     if (fd < 0) return;
     dup2(fd, STDOUT_FILENO);
@@ -40,12 +40,13 @@ static void redirect_log(void) {
 
 int main(int argc, char **argv) {
     redirect_log();
-    fprintf(stderr, "[lipflow] native launcher\n");
+    fprintf(stderr, "[thoughts-to-text] native launcher\n");
 
     char pythonpath[8192];
     snprintf(pythonpath, sizeof pythonpath, "%s:%s", LIPFLOW_SITE, LIPFLOW_ROOT);
 
-    setenv("LIPFLOW_APP", "1", 1);
+    setenv("THOUGHTS_TO_TEXT_APP", "1", 1);
+    setenv("LIPFLOW_APP", "1", 1);  /* compatibility with the retained Python package */
     setenv("PYTHONUNBUFFERED", "1", 1);
     setenv("PYTHONNOUSERSITE", "1", 1);
     setenv("PYTHONHOME", LIPFLOW_PYHOME, 1);
@@ -58,7 +59,7 @@ int main(int argc, char **argv) {
     int n = argc + 2; /* program, -m, lipflow, then the original args except argv0 */
     wchar_t **wargv = calloc((size_t)n + 1, sizeof(wchar_t *));
     if (!wargv) return 1;
-    wargv[0] = Py_DecodeLocale("lipflow", NULL);
+    wargv[0] = Py_DecodeLocale("thoughts-to-text", NULL);
     wargv[1] = Py_DecodeLocale("-m", NULL);
     wargv[2] = Py_DecodeLocale("lipflow", NULL);
     for (int i = 1; i < argc; i++) {

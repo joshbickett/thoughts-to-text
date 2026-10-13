@@ -1,4 +1,4 @@
-"""Lipflow: hold a key, mouth the words, let go — the text appears at your cursor."""
+"""Thoughts to Text: hold a key, mouth the words, let go — the text appears at your cursor."""
 from __future__ import annotations
 
 import json
@@ -68,6 +68,8 @@ class Lipflow(NSObject):
         self.last_output = ""
         self.last_paste_at = 0.0
         self.context: list[str] = []
+        from .context_session import ContextCollector
+        self.context_collector = ContextCollector()
         self.hands_free = False
         self.pending_stop = None
         from .mic import Mic
@@ -93,14 +95,14 @@ class Lipflow(NSObject):
         try:
             self.ptt.install()
         except PermissionError as e:
-            print(f"\n[lipflow] {e}\n")
+            print(f"\n[thoughts-to-text] {e}\n")
             Quartz.CGRequestListenEventAccess()
-            self.hud.show("error", "Needs Input Monitoring", f"Allow {WHO}, then restart lipflow")
+            self.hud.show("error", "Needs Input Monitoring", f"Allow {WHO}, then restart Thoughts to Text")
         if self.opts.paste and not Quartz.CGPreflightPostEventAccess():
             Quartz.CGRequestPostEventAccess()
-            print(f"[lipflow] Allow {WHO} under Privacy & Security → Accessibility so Lipflow can paste.")
+            print(f"[thoughts-to-text] Allow {WHO} under Privacy & Security → Accessibility so Thoughts to Text can paste.")
         self._request_camera()
-        self.hud.show("reading", "Lipflow", "Loading the lip-reading model…")
+        self.hud.show("reading", "Thoughts to Text", "Loading the lip-reading model…")
         threading.Thread(target=self._worker, name="lipflow-model", daemon=True).start()
         self.jobs.put(("load",))
 
@@ -110,9 +112,9 @@ class Lipflow(NSObject):
         status = AVCaptureDevice.authorizationStatusForMediaType_(AVMediaTypeVideo)
         if status == 0:  # not determined: show the system prompt now, from the main thread
             AVCaptureDevice.requestAccessForMediaType_completionHandler_(
-                AVMediaTypeVideo, lambda granted: print(f"[lipflow] camera access {'granted' if granted else 'denied'}"))
+                AVMediaTypeVideo, lambda granted: print(f"[thoughts-to-text] camera access {'granted' if granted else 'denied'}"))
         elif status in (1, 2):
-            print(f"[lipflow] camera access is denied: System Settings → Privacy & Security → Camera → enable {WHO}")
+            print(f"[thoughts-to-text] camera access is denied: System Settings → Privacy & Security → Camera → enable {WHO}")
             self.hud.show("error", "No camera access", f"Enable {WHO} in Settings → Privacy → Camera", 6.0)
 
     @objc.python_method
@@ -126,7 +128,7 @@ class Lipflow(NSObject):
         self._cleanup_menu(menu)
         n = len(self.cleaner.personal.phrases)
         self._item(menu, f"Personalised from {n:,} of your phrases" if n else
-                   "Not personalised yet: run lipflow import-wispr", None, icon="person.text.rectangle")
+                   "Not personalised yet: run thoughts-to-text import-wispr", None, icon="person.text.rectangle")
         menu.addItem_(NSMenuItem.separatorItem())
         self._camera_menu(menu)
         self.last_item = self._item(menu, "Copy last dictation", "copyLast:", icon="doc.on.clipboard")
@@ -135,7 +137,7 @@ class Lipflow(NSObject):
         self._item(menu, "Practice & train more…", "trainMore:", icon="person.crop.square")
         self._item(menu, "Settings…", "openSettings:", ",", icon="gearshape")
         menu.addItem_(NSMenuItem.separatorItem())
-        self._item(menu, "Quit Lipflow", "quit:", "q", icon="power")
+        self._item(menu, "Quit Thoughts to Text", "quit:", "q", icon="power")
         self.status.setMenu_(menu)
 
     @objc.python_method
@@ -194,7 +196,7 @@ class Lipflow(NSObject):
         self.camera.set_source(cam_id)
         for it in self.cam_items:
             it.setState_(1 if it.representedObject() == cam_id else 0)
-        print(f"[lipflow] camera: {sender.title()}")
+        print(f"[thoughts-to-text] camera: {sender.title()}")
 
     @objc.python_method
     def _set_status_icon(self, listening: bool):
@@ -253,6 +255,7 @@ class Lipflow(NSObject):
 
     def quit_(self, sender):
         self.camera.close()
+        self.context_collector.close()
         NSApplication.sharedApplication().terminate_(None)
 
     # -- hotkey callbacks (main thread) -------------------------------------------
@@ -273,6 +276,11 @@ class Lipflow(NSObject):
         # the app you're typing into is frontmost right now
         self.ctx = capture() if self.settings.get("use_context", True) else Context()
         rec = self.camera.start_recording()
+        # Bind this snapshot to this clip: another dictation may start before decoding finishes.
+        rec.context_snapshot = self.context_collector.start(
+            self.ctx, use_screen=bool(self.settings.get("use_context", True)
+                                     and self.settings.get("use_screen_context", True)
+                                     and self.onboarding is None))
         if self.whisper_on:
             self.mic.start()
         self._set_status_icon(True)
@@ -354,7 +362,7 @@ class Lipflow(NSObject):
             waited += PREVIEW_EVERY
             if not rec.ts and (self.camera.error or waited > 4):
                 msg = self.camera.error or "The camera isn't sending frames"
-                print(f"[lipflow] camera problem: {msg}")
+                print(f"[thoughts-to-text] camera problem: {msg}")
                 ui(self.hud.show, "error", "Camera problem", msg[:90], 5.0)
                 return
             if self.session != session or self.preview_busy or len(rec.ts) < 15:
@@ -380,7 +388,7 @@ class Lipflow(NSObject):
                 elif job[0] == "cleanup":
                     self.cleaner = Cleaner(job[1])
                     self._warm_cleanup()
-                    print(f"[lipflow] cleanup: {self.cleaner.describe()}")
+                    print(f"[thoughts-to-text] cleanup: {self.cleaner.describe()}")
                     ui(self.cleanup_item.setTitle_, f"Cleanup: {self.cleaner.describe()}")
                 elif job[0] == "reload":  # e.g. face model reset from Settings
                     self.reader = LipReader(beam_size=self.opts.beam)
@@ -400,7 +408,7 @@ class Lipflow(NSObject):
         try:
             self.cleaner.warmup()
         except Exception as e:
-            print(f"[lipflow] local cleanup model unavailable ({e}); using basic cleanup")
+            print(f"[thoughts-to-text] local cleanup model unavailable ({e}); using basic cleanup")
             self.cleaner.backend, self.cleaner.model = "basic", None
 
     @objc.python_method
@@ -413,8 +421,11 @@ class Lipflow(NSObject):
         self._warm_cleanup()
         ui(self.cleanup_item.setTitle_, f"Cleanup: {self.cleaner.describe()}")
         self.loading = False
-        print(f"[lipflow] model ready in {time.time() - t:.1f}s "
+        print(f"[thoughts-to-text] model ready in {time.time() - t:.1f}s "
               f"(encoder on {self.reader.enc_device}, cleanup: {self.cleaner.describe()})")
+        from .screen_context import screen_capture_allowed
+        print("[thoughts-to-text] screen context: " +
+              ("available" if screen_capture_allowed() else "needs Screen Recording permission"))
         name = self.opts.key.replace("_", " ").title()
         ui(self.state_item.setTitle_, "Ready")
         ui(self.state_item.setImage_, symbol("checkmark.circle", 13, NSFontWeightRegular))
@@ -423,7 +434,11 @@ class Lipflow(NSObject):
         if self.opts.onboard or not self.settings.get("onboarded"):
             ui(self.show_setup)
         else:
-            ui(self.hud.show, "done", "Lipflow is ready", f"Hold {name} and mouth your words", 2.5)
+            ui(self.hud.show, "done", "Thoughts to Text is ready", f"Hold {name} and mouth your words", 2.5)
+            if not self.settings.get("screen_context_intro_shown"):
+                self.settings["screen_context_intro_shown"] = True
+                save_settings(self.settings)
+                ui(self.openSettings_, None)
 
     @property
     def whisper_on(self) -> bool:
@@ -443,7 +458,7 @@ class Lipflow(NSObject):
         ui(self.hud.show, "reading", "Whisper mode", "Loading…")
         self.av_reader = av.AVReader(beam_size=self.opts.beam)
         self.av_reader.warmup_av()
-        print("[lipflow] whisper mode ready (lips + audio)")
+        print("[thoughts-to-text] whisper mode ready (lips + audio)")
         ui(self.hud.show, "done", "Whisper mode on", "Whisper or speak softly while you mouth the words", 3.0)
 
     @objc.python_method
@@ -478,13 +493,13 @@ class Lipflow(NSObject):
         t0 = time.time()
         problem = clip_problem(rec)
         if problem and self.onboarding is not None:
-            print(f"[lipflow] practice clip rejected ({rec.duration:.1f}s, {len(rec.ts)} frames, face in "
+            print(f"[thoughts-to-text] practice clip rejected ({rec.duration:.1f}s, {len(rec.ts)} frames, face in "
                   f"{rec.face_ratio:.0%}): {problem[0]}")
             ui(self.onboarding.clip_done, False, f"{problem[0]}. {problem[1]}.")
             ui(self.hud.hide)
             return
         if problem:
-            print(f"[lipflow] skipped {rec.duration:.1f}s clip ({len(rec.ts)} frames, face in "
+            print(f"[thoughts-to-text] skipped {rec.duration:.1f}s clip ({len(rec.ts)} frames, face in "
                   f"{rec.face_ratio:.0%}): {problem[0]}")
             ui(self.hud.show, "error", problem[0], problem[1], 2.2)
             return
@@ -493,7 +508,7 @@ class Lipflow(NSObject):
         t_enc = time.time() - t0
         if self.onboarding is not None:  # practice clip: keep it with its known text, don't paste
             raw = self.reader.greedy(enc)
-            print(f"[lipflow] practice clip saved ({rec.duration:.1f}s): {raw!r}")
+            print(f"[thoughts-to-text] practice clip saved ({rec.duration:.1f}s): {raw!r}")
             ui(self.onboarding.clip_done, True, "", rois, self.onboarding_text, raw)
             ui(self.hud.hide)
             return
@@ -501,20 +516,28 @@ class Lipflow(NSObject):
         candidates = self._av_candidates(rec, rois)
         if not candidates or not candidates[0]:
             if candidates is not None:
-                print("[lipflow] lips + audio read nothing, using lips only")
+                print("[thoughts-to-text] lips + audio read nothing, using lips only")
             candidates = self.reader.beam_search(enc, nbest=5)
         t_beam = time.time() - t0 - t_enc
         if not candidates or not candidates[0]:
-            print(f"[lipflow] {rec.duration:.1f}s clip: nothing read")
+            print(f"[thoughts-to-text] {rec.duration:.1f}s clip: nothing read")
             ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
             return
         ui(self.hud.set_text, candidates[0].lower())
-        ctx = getattr(self, "ctx", None)
-        text = self.cleaner(candidates, context=" ".join(self.context[-3:]), names=ctx.names if ctx else None)
+        snapshot = getattr(rec, "context_snapshot", None)
+        ctx = snapshot.focused if snapshot else None
+        use_context = self.settings.get("use_context", True)
+        surrounding = snapshot.text(allow_screen=self.settings.get("use_screen_context", True)) \
+            if snapshot and use_context else ""
+        names = ctx.names if ctx and use_context else None
+        text = self.cleaner(candidates, context=" ".join(self.context[-3:]), names=names,
+                            screen_context=surrounding)
         t_all = time.time() - t0
         if ctx and ctx.names:
-            print(f"[lipflow] context: {ctx.app}, {len(ctx.names)} names")
-        print(f"[lipflow] {rec.duration:.1f}s clip → raw: {candidates[0]!r}\n"
+            print(f"[thoughts-to-text] context: {ctx.app}, {len(ctx.names)} names")
+        if surrounding:
+            print(f"[thoughts-to-text] surrounding context: {len(surrounding)} characters (memory only)")
+        print(f"[thoughts-to-text] {rec.duration:.1f}s clip → raw: {candidates[0]!r}\n"
               f"          → typed: {text!r}  (encode {t_enc:.2f}s, beam {t_beam:.2f}s, total {t_all:.2f}s)")
         if not text:
             ui(self.hud.show, "error", "Couldn't read that", "Try again, a little slower", 2.2)
@@ -563,7 +586,7 @@ class Lipflow(NSObject):
 
 
 class AppDelegate(NSObject):
-    """Opening Lipflow.app while it's already running brings up Settings (or setup, first time),
+    """Opening Thoughts-to-Text.app while it's already running brings up Settings (or setup, first time),
     since the menu-bar icon can be hidden behind the notch when the menu bar is full."""
 
     def applicationShouldHandleReopen_hasVisibleWindows_(self, app, visible):
@@ -584,6 +607,6 @@ def run(opts: Options):
     app.setDelegate_(delegate)
     lf._delegate = delegate
     lf.start()
-    print(f"[lipflow] hold {opts.key.replace('_', ' ')} and mouth your words · double-tap for hands-free · "
+    print(f"[thoughts-to-text] hold {opts.key.replace('_', ' ')} and mouth your words · double-tap for hands-free · "
           f"Esc cancels · Ctrl-C quits")
     AppHelper.runEventLoop(installInterrupt=True)

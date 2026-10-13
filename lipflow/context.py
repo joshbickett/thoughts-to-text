@@ -1,10 +1,9 @@
 """What you're typing into: app, window title, and the text around the cursor.
 
 Read once, locally, through the Accessibility API (on Windows, just the window title) when you
-press the push-to-talk key (the app you're dictating into is frontmost at that moment). Only names
-and terms are pulled out, to help with the words lip reading gets wrong most often — who you're
-writing to, the thread you're in.
-Nothing is saved to disk or sent anywhere.
+press the push-to-talk key (the app you're dictating into is frontmost at that moment). The
+cleanup model uses this context to disambiguate words. This module never saves or transmits
+it; when a cloud cleanup provider is selected, its text is included in the provider request.
 """
 from __future__ import annotations
 
@@ -29,6 +28,10 @@ class Context:
     names: list[str] = field(default_factory=list)
     element: object = None   # the focused text field (for learning from corrections); memory only
     value: str = ""          # its full contents before the paste; memory only
+    app_pid: int = 0
+    window_id: int = 0
+    window_bounds: tuple[float, float, float, float] | None = None
+    secure_field: bool = False
 
     def describe(self) -> str:
         bits = [self.app] + ([f'"{self.title[:60]}"'] if self.title else [])
@@ -39,6 +42,28 @@ def _ax(el, attr):
     from ApplicationServices import AXUIElementCopyAttributeValue
     err, val = AXUIElementCopyAttributeValue(el, attr, None)
     return val if err == 0 else None
+
+
+def _secure_element(el) -> bool:
+    """Never read a password field's value, including protected custom controls."""
+    return (
+        _ax(el, "AXSubrole") == "AXSecureTextField"
+        or _ax(el, "AXRole") == "AXSecureTextField"
+        or bool(_ax(el, "AXProtectedContent"))
+    )
+
+
+def _window_bounds(win):
+    from ApplicationServices import AXValueGetValue, kAXValueCGPointType, kAXValueCGSizeType
+
+    position, size = _ax(win, "AXPosition"), _ax(win, "AXSize")
+    if position is None or size is None:
+        return None
+    ok_position, position = AXValueGetValue(position, kAXValueCGPointType, None)
+    ok_size, size = AXValueGetValue(size, kAXValueCGSizeType, None)
+    if ok_position and ok_size:
+        return (float(position.x), float(position.y), float(size.width), float(size.height))
+    return None
 
 
 def extract_names(*texts: str, limit: int = 30) -> list[str]:
@@ -179,12 +204,20 @@ def capture(max_chars: int = 600) -> Context:
         if app is None:
             return ctx
         ctx.app = str(app.localizedName() or "")
-        ax_app = AXUIElementCreateApplication(app.processIdentifier())
+        ctx.app_pid = int(app.processIdentifier())
+        ax_app = AXUIElementCreateApplication(ctx.app_pid)
         win = _ax(ax_app, "AXFocusedWindow")
         if win is not None:
             ctx.title = str(_ax(win, "AXTitle") or "")
+            try:
+                ctx.window_bounds = _window_bounds(win)
+            except Exception:
+                pass
         focused = _ax(ax_app, "AXFocusedUIElement")
         if focused is not None:
+            ctx.secure_field = _secure_element(focused)
+            if ctx.secure_field:
+                return ctx
             val = _ax(focused, "AXValue")
             if isinstance(val, str):
                 ctx.element, ctx.value = focused, val
@@ -194,6 +227,10 @@ def capture(max_chars: int = 600) -> Context:
                 if isinstance(ph, str):
                     ctx.near_text = ph
         ctx.names = extract_names(ctx.title, ctx.near_text)
+        # Pin the exact window now, before an overlay or another app takes focus.
+        # This enumerates window metadata only; it does not request capture permission.
+        from .screen_context import capture_window_identity
+        capture_window_identity(ctx)
     except Exception as e:  # permissions, sandboxed apps, odd elements
         print(f"[lipflow] context unavailable: {e.__class__.__name__}")
     return ctx

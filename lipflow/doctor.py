@@ -1,4 +1,4 @@
-"""`lipflow doctor`: check everything the app needs before you hit the hotkey."""
+"""`thoughts-to-text doctor`: check what the app needs before you hit the hotkey."""
 from __future__ import annotations
 
 import os
@@ -6,7 +6,7 @@ import shutil
 import sys
 
 from .vsr import MODELS
-from .paths import WHO
+from .paths import HOME, WHO
 
 
 def doctor() -> int:
@@ -24,7 +24,8 @@ def doctor() -> int:
     else:
         fix_models = "run ./setup.sh"
 
-    print("Lipflow doctor\n")
+    print("Thoughts to Text doctor\n")
+    print(f"  Data: {HOME}")
     for rel, size in [("vsr/model.pth", 900e6), ("lm/model.pth", 200e6), ("face_landmarker.task", 3e6)]:
         path = os.path.join(MODELS, rel)
         line(os.path.exists(path) and os.path.getsize(path) > size, f"model file {rel}", fix_models)
@@ -44,8 +45,8 @@ def doctor() -> int:
     from .cleanup import Cleaner
     c = Cleaner()
     line(True, f"cleanup backend: {c.describe()}"
-         + ("  (set ANTHROPIC_API_KEY or run Ollama for much better accuracy)" if c.backend == "basic" else ""))
-    print("\nAll good." if ok else "\nFix the ✗ items above, then run `lipflow`.")
+         + ("  (other cleanup models are available in Settings)" if c.backend == "basic" else ""))
+    print("\nAll good." if ok else "\nFix the ✗ items above, then run `thoughts-to-text`.")
     return 0 if ok else 1
 
 
@@ -61,6 +62,9 @@ def _mac_checks(line):
     names = {0: "not asked yet (you'll be prompted on first use)", 1: "restricted", 2: "denied", 3: "granted"}
     line(status in (0, 3), f"Camera: {names.get(status, status)}",
          f"System Settings → Privacy & Security → Camera → enable {WHO}")
+    from .screen_context import screen_capture_allowed
+    screen_status = "granted" if screen_capture_allowed() else "not granted (optional)"
+    line(True, f"Screen Recording for surrounding text: {screen_status}")
 
 
 def _windows_checks(line):

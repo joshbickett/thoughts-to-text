@@ -1,7 +1,7 @@
 """First-run setup: permissions → import Wispr Flow → mouth ~24 sentences → train on your face.
 
 The practice step uses the normal push-to-talk key, so onboarding is also the tutorial. Clips are
-saved with their known text under ~/Library/Application Support/Lipflow/clips/onboarding. Training
+saved with their known text under ~/Library/Application Support/ThoughtsToText/clips/onboarding. Training
 holds 6 of them out and only keeps the face model if it reads those better than the stock model.
 """
 from __future__ import annotations
@@ -61,7 +61,7 @@ class GlassWindow(NSWindow):
 
 
 class Onboarding(NSObject):
-    """Owns the setup window. `app` is the running Lipflow controller."""
+    """Owns the setup window. `app` is the running dictation controller."""
 
     def initWithApp_(self, app):
         self = objc.super(Onboarding, self).init()
@@ -73,7 +73,7 @@ class Onboarding(NSObject):
         self.timer = None
         self.win = GlassWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, WW, WH), NSWindowStyleMaskBorderless, NSBackingStoreBuffered, False)
-        self.win.setTitle_("Set up Lipflow")
+        self.win.setTitle_("Set up Thoughts to Text")
         self.win.setMovableByWindowBackground_(True)
         self.win.setHasShadow_(True)
         self.win.setOpaque_(False)
@@ -180,26 +180,29 @@ class Onboarding(NSObject):
     # -- 1. welcome -----------------------------------------------------------------
     @objc.python_method
     def welcome(self):
-        p = self._new_page("mouth", "Lipflow reads your lips",
+        p = self._new_page("text.bubble", "Thoughts to Text reads your lips",
                            "Hold a key, mouth what you want to say without making a sound, let go, and the "
                            "text appears wherever you're typing. Setup takes about 8 minutes: it learns your "
                            "words and your face.")
-        _text(p, NSMakeRect(90, 230, WW - 180, 60),
-              "Everything stays on this Mac: the camera video, your practice clips and the models trained "
-              "on them. Nothing is uploaded.", 13, alpha=0.55, center=True)
+        _text(p, NSMakeRect(90, 205, WW - 180, 90),
+              "Camera video, practice clips and screen captures are processed on this Mac. "
+              "If you choose cloud cleanup, your transcript and text context are sent to that provider.",
+              13, alpha=0.55, center=True)
         self._button("Get started", "goPermissions:", (WW - 200) / 2, 130, 200, primary=True)
 
     # -- 2. permissions -------------------------------------------------------------
     def goPermissions_(self, sender):
-        p = self._new_page("lock.shield", "Three permissions",
-                           "macOS asks for these once. Grant each one, then come back here.")
+        p = self._new_page("lock.shield", "Permissions",
+                           "Camera, Input Monitoring and Accessibility enable dictation. "
+                           "Screen Recording is optional: it adds nearby text as context.")
         self._steps(0)
         self.perm_rows = []
         rows = [("camera.fill", "Camera", "to see your mouth", "askCamera:"),
                 ("keyboard", "Input Monitoring", "to notice the push-to-talk key", "askInput:"),
-                ("text.cursor", "Accessibility", "to paste into the app you're using", "askAccess:")]
+                ("text.cursor", "Accessibility", "to paste into the app you're using", "askAccess:"),
+                ("rectangle.inset.filled", "Screen Recording · optional", "to read nearby text on this Mac", "askScreen:")]
         for k, (icon, name, why, action) in enumerate(rows):
-            y = WH - 320 - k * 64
+            y = WH - 290 - k * 54
             iv = NSImageView.alloc().initWithFrame_(NSMakeRect(80, y + 6, 28, 28))
             iv.setImage_(symbol(icon, 18))
             iv.setContentTintColor_(_rgb((1, 1, 1), 0.85))
@@ -212,11 +215,12 @@ class Onboarding(NSObject):
             self.perm_rows.append((status, btn))
         self.perm_next = self._button("Continue", "goWords:", (WW - 200) / 2, 90, 200, primary=True)
         # macOS keeps a denial for the life of the process, so a switch turned on in Settings
-        # may not show up until Lipflow restarts. Offer that once an Allow has been clicked.
-        self.perm_restart = self._button("Turned them on? Restart Lipflow", "restartForPerms:",
-                                         (WW - 260) / 2, 46, 260, h=30)
+        # may not show up until the app restarts. Offer that once an Allow has been clicked.
+        self.perm_restart = self._button("Restart Thoughts to Text", "restartForPerms:",
+                                         (WW - 280) / 2, 46, 280, h=30)
         self.perm_restart.setHidden_(True)
         self._asked_perms = False
+        self._asked_screen = False
         self.refreshPerms_(None)
         self.timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             1.0, self, "refreshPerms:", None, True)
@@ -224,8 +228,10 @@ class Onboarding(NSObject):
     @objc.python_method
     def _perm_state(self):
         from AVFoundation import AVCaptureDevice, AVMediaTypeVideo
+        from .screen_context import screen_capture_allowed
         return [AVCaptureDevice.authorizationStatusForMediaType_(AVMediaTypeVideo) == 3,
-                bool(Quartz.CGPreflightListenEventAccess()), bool(Quartz.CGPreflightPostEventAccess())]
+                bool(Quartz.CGPreflightListenEventAccess()), bool(Quartz.CGPreflightPostEventAccess()),
+                screen_capture_allowed()]
 
     def refreshPerms_(self, timer):
         states = self._perm_state()
@@ -233,10 +239,11 @@ class Onboarding(NSObject):
             status.setImage_(symbol("checkmark.circle.fill" if ok else "circle.dashed", 18))
             status.setContentTintColor_(_rgb(GREEN) if ok else _rgb((1, 1, 1), 0.35))
             btn.setHidden_(ok)
-        ready = all(states)
+        ready = all(states[:3])  # screen context is optional
         self.perm_next.setEnabled_(ready)
         self.perm_next.layer().setOpacity_(1.0 if ready else 0.35)
-        self.perm_restart.setHidden_(ready or not self._asked_perms)
+        needs_restart = (self._asked_perms and not ready) or (self._asked_screen and not states[3])
+        self.perm_restart.setHidden_(not needs_restart)
 
     def restartForPerms_(self, sender):
         from AppKit import NSApplication, NSBundle
@@ -264,13 +271,19 @@ class Onboarding(NSObject):
         if not Quartz.CGRequestPostEventAccess():
             os.system('open "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"')
 
+    def askScreen_(self, sender):
+        from .screen_context import request_screen_capture_permission
+        self._asked_screen = True
+        if not request_screen_capture_permission():
+            subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"])
+
     # -- 3. your words (Wispr import) -------------------------------------------------
     def goWords_(self, sender):
         from .personal import PHRASES, WISPR_DIR
         have = os.path.exists(PHRASES)
         p = self._new_page("text.book.closed", "Teach it your words",
-                           "Most of what you'll mouth is stuff you already say. If you use Wispr Flow, Lipflow "
-                           "can learn your phrasing and names from its history, read locally, never uploaded.")
+                           "If you use Wispr Flow, you can import its history locally to learn your phrasing "
+                           "and names. Relevant phrases may become text context if you choose cloud cleanup.")
         self._steps(1)
         self.words_status = _text(p, NSMakeRect(80, 250, WW - 160, 60), "", 13.5, alpha=0.8, center=True)
         if have:
@@ -295,7 +308,7 @@ class Onboarding(NSObject):
                 msg = f"Imported {st['phrases']:,} phrases."
                 if st["new_names"]:
                     msg += f" Found {len(st['new_names'])} names and terms (edit them from the menu)."
-                msg += " Lipflow will learn your phrasing during training."
+                msg += " Thoughts to Text will learn your phrasing during training."
             except Exception as e:
                 msg = f"Couldn't import: {e}"
             AppHelper.callAfter(self.words_status.setStringValue_, msg)
@@ -379,7 +392,7 @@ class Onboarding(NSObject):
         self.app.onboarding = None
         p = self._new_page("cpu", "Learning your face",
                            "Training runs on this Mac's GPU and takes about 5 minutes. You can keep working. "
-                           "Lipflow is paused until it's done.")
+                           "Thoughts to Text is paused until it's done.")
         self._steps(3)
         self.progress = NSProgressIndicator.alloc().initWithFrame_(NSMakeRect(100, 300, WW - 200, 12))
         self.progress.setIndeterminate_(False)
@@ -388,7 +401,7 @@ class Onboarding(NSObject):
         p.addSubview_(self.progress)
         self.train_status = _text(p, NSMakeRect(60, 220, WW - 120, 56), "Starting…", 13.5, alpha=0.8, center=True)
         self.result = _text(p, NSMakeRect(60, 150, WW - 120, 60), "", 15, NSFontWeightSemibold, center=True)
-        self.done_btn = self._button("Start using Lipflow", "finish:", (WW - 220) / 2, 80, 220, primary=True)
+        self.done_btn = self._button("Start using Thoughts to Text", "finish:", (WW - 280) / 2, 80, 280, primary=True)
         self.done_btn.setHidden_(True)
         self.app.jobs.put(("train", self))
 
@@ -430,4 +443,4 @@ class Onboarding(NSObject):
         self.app.settings["onboarded"] = True  # or the next settings change writes it back out
         self.win.orderOut_(None)
         self.app.camera.track_always = False
-        self.app.hud.show("done", "Lipflow is ready", "Hold Right Option anywhere and mouth your words", 3.0)
+        self.app.hud.show("done", "Thoughts to Text is ready", "Hold Right Option anywhere and mouth your words", 3.0)

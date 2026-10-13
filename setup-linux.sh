@@ -17,4 +17,4 @@ else
 fi
 
 echo
-echo "Done. Run: uv run lipflow doctor && uv run lipflow"
+echo "Done. Run: uv run thoughts-to-text doctor && uv run thoughts-to-text"

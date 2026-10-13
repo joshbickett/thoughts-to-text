@@ -1,244 +1,180 @@
-# Lipflow
+# Thoughts to Text
 
-**Wispr Flow for your lips.** Hold a key, silently mouth what you want to say, let go, and the
-text shows up at your cursor in whatever app you're in. No microphone and no sound, just your webcam.
+Hold a key, silently mouth a sentence, and release to paste text at your cursor.
+Thoughts to Text is an independent fork of [Lipflow](https://github.com/amywork777/lipflow)
+with a separate macOS app, its own settings and personal data, and optional screen text
+context for dictation cleanup.
 
-Everything runs locally on your Mac, Windows PC, or Linux. An optional LLM pass fixes the words lip reading gets wrong.
+The webcam lip reader runs locally. Cleanup can use a local model or a remote provider.
+On macOS, the app can read the text around your cursor and use local OCR to read the
+active conversation or document. This gives the cleanup model useful names and phrasing;
+it cannot reliably recover every word from ambiguous lip movements. Review the output
+before using it where mistakes matter.
 
-```
- hold ⌥ (right)  ──►  webcam  ──►  face landmarks (live)  ──►  mouth crops, 25 fps
-                                                                   │
-   paste at cursor  ◄──  LLM cleanup  ◄──  beam search + LM  ◄──  VSR encoder (Apple GPU)
-                                       ▲
-                     live preview: greedy CTC every 0.45 s while you talk
-```
+## Install on macOS
 
-## Setup
+Use an Apple Silicon Mac with macOS 14 or later and Apple's Command Line Tools
+(`xcode-select --install` if needed). Run setup from a native arm64 terminal, outside
+Rosetta. Python 3.11–3.12 is supported; setup uses uv to find or install a compatible
+interpreter. Allow several gigabytes for dependencies and model weights.
 
-Needs an Apple Silicon Mac on macOS 13 or later (macOS 26 for the Liquid Glass look), and about 2 GB of disk.
-
-```sh
-git clone https://github.com/amywork777/lipflow.git ~/code/lipflow
-cd ~/code/lipflow && ./setup.sh     # installs uv deps, ~1.2 GB of models, builds /Applications/Lipflow.app
-open /Applications/Lipflow.app
-```
-
-The first launch opens setup, which takes about 8 minutes:
-
-1. **Permissions:** Camera, Input Monitoring and Accessibility, each asked once for "Lipflow".
-   The app is a small signed program that loads this checkout in-process, so those
-   permissions belong to Lipflow rather than to Python. If a switch is on in System
-   Settings but setup still shows it off, click **Restart Lipflow** under Continue.
-2. **Your words:** if you use Wispr Flow, it imports your dictation history (read locally, never
-   uploaded) to learn your phrasing and the names you say.
-3. **Practice:** you silently mouth 24 sentences (taken from your own history when available).
-4. **Train:** it fine-tunes the language model on your phrasing and the lip reader on your face,
-   on this Mac's GPU. Six practice sentences are held out, and the face model is only kept if it
-   reads them better than the stock model. You see the before/after score.
-
-Re-run it any time from the menu → *Set up / train on my face…*. More practice clips help more.
-Everything personal (clips, phrases, trained models) lives in
-`~/Library/Application Support/Lipflow/`. Delete that folder to start over.
-
-To start Lipflow at login: System Settings → General → Login Items → add Lipflow. Logs are in
-`~/Library/Logs/Lipflow.log`. Running from a terminal (`uv run lipflow`) also works, but then
-macOS asks for permissions in the terminal's name.
-
-### Windows
-
-Needs Windows 10 or 11 (64-bit) and about 3 GB of disk. In PowerShell:
-
-```powershell
-git clone https://github.com/amywork777/lipflow.git $HOME\code\lipflow
-cd $HOME\code\lipflow
-powershell -ExecutionPolicy Bypass -File setup.ps1   # uv deps, ~1.2 GB of models, Start menu shortcut
-```
-
-Then open **Lipflow** from the Start menu. It lives in the system tray (the pink mouth by the
-clock; click ^ if it's hidden). The first launch opens the same setup as on a Mac, minus
-permissions: your Wispr Flow words, 24 practice sentences, then training on your face.
-
-How it differs from the Mac version:
-
-- **Key:** hold **Right Ctrl** (change it in the tray menu → *Push-to-talk key*: Right Alt / AltGr,
-  Left Alt or Right Shift also work). Double-tap for hands-free and Esc to cancel work the same.
-- **Camera:** if it doesn't come on, turn on Settings → Privacy & security → Camera → *Let desktop
-  apps access your camera*. Pick another camera by number in the tray menu.
-- **Speed:** without an NVIDIA GPU the lip reader runs on the processor, so expect a second or two
-  more per sentence than on a Mac (on an M4 Pro the encoder takes 1.7 s on CPU vs 0.16 s on the
-  GPU), and training on your face takes several times longer. With an NVIDIA card, install the
-  CUDA build of PyTorch: `uv pip install torch --index-url https://download.pytorch.org/whl/cu126`
-  (re-run it after `uv sync`, which puts the CPU build back).
-- **Cleanup:** the in-process local model is Mac-only (MLX), so use Claude (`setx ANTHROPIC_API_KEY …`,
-  then restart Lipflow), the [Codex CLI](https://developers.openai.com/codex/cli) (`codex login`), or
-  [Ollama](https://ollama.com) (`ollama pull qwen3:4b`). Without one of these, Lipflow uses the offline rules.
-- **Names from context:** taken from the window title only (on a Mac it also reads the text
-  around your cursor). Learning from your corrections is Mac-only for now.
-- **Start with Windows:** tray menu → *Start with Windows*. Your data lives in `%APPDATA%\Lipflow`
-  (log: `Lipflow.log` there). `uv run lipflow doctor` checks the models and camera.
-
-### Linux
-
-Needs a 64-bit Linux distro with a webcam, Python 3.11–3.12, and about 3 GB of disk (models + PyTorch).
+Clone the repository, then run setup:
 
 ```sh
-git clone https://github.com/amywork777/lipflow.git ~/code/lipflow
-cd ~/code/lipflow
-curl -LsSf https://astral.sh/uv/install.sh | sh   # if you don't have uv yet
+git clone https://github.com/joshbickett/thoughts-to-text.git
+cd thoughts-to-text
+./setup.sh
+open /Applications/Thoughts-to-Text.app
+```
+
+Setup installs dependencies, downloads the pretrained models, and builds a native menu-bar
+app with a teal text-bubble icon. The app loads this checkout, so keep the checkout and its
+`.venv` in place. It has its own bundle identity and does not replace `/Applications/Lipflow.app`.
+
+First launch offers:
+
+1. **Camera, Input Monitoring and Accessibility permissions** for Thoughts to Text.
+   If a permission is enabled in System Settings but has not taken effect, restart the app.
+2. **Optional Screen Recording permission** for local screen OCR. Dictation and text-field
+   context can work without this permission.
+3. **Optional Wispr Flow history import** to learn familiar words and phrasing.
+4. **Practice and training** using recorded examples of your silent speech. The existing
+   training flow compares the personalized lip reader with the stock model on held-out clips.
+
+To rebuild an existing installation after updating this checkout:
+
+```sh
 uv sync
-./scripts/download-models.sh                        # ~1.2 GB of models
-uv run lipflow doctor
-uv run lipflow                                      # system tray (pink mouth icon)
+uv run python scripts/make_app.py
 ```
 
-The first launch runs the same setup as on Windows (import Wispr phrases if present, ~24 practice
-sentences, optional training on your face). Personal data lives in
-`$XDG_DATA_HOME/Lipflow` (usually `~/.local/share/Lipflow`). Logs: `Lipflow.log` in that folder.
+Quit the app before rebuilding, then reopen it. To launch at login, add
+**Thoughts to Text** in System Settings → General → Login Items.
 
-How it differs from the Mac version:
+## Dictate
 
-- **Key:** hold **Right Ctrl** by default (tray menu → *Push-to-talk key*: Right Alt / AltGr, Left Alt,
-  or Right Shift). Double-tap for hands-free; Esc cancels.
-- **Paste:** Wayland needs [wl-clipboard](https://github.com/bugaevc/wl-clipboard) and one key
-  tool: [wtype](https://github.com/atx/wtype) on Hyprland and Sway, or
-  [ydotool](https://github.com/ReimuNotMoe/ydotool) (with `ydotoold` running) on GNOME, KDE, and
-  other compositors. X11 needs `xdotool` and `xclip`. `--copy-only` leaves the text on the clipboard.
-- **Tray:** pystray needs PyGObject and an AppIndicator typelib. If the pink icon never appears,
-  install them (Ubuntu: `gir1.2-ayatanaappindicator3-0.1`).
-- **Camera:** PipeWire/v4l2 (`/dev/video0`). Pick a camera by number in the tray menu if the default
-  is wrong.
-- **Speed:** encoder runs on CPU unless you install the CUDA build of PyTorch (same as Windows).
-  Training on your face is CPU-only and slower than on Apple Silicon.
-- **Cleanup:** the in-process MLX model is Mac-only. Use Claude (`export ANTHROPIC_API_KEY=…`) or
-  Ollama (`ollama pull qwen3:4b`, then `uv run lipflow --cleanup ollama`) for better accuracy.
-- **Context / corrections:** names come from the active window title (Hyprland: `hyprctl`; Sway:
-  `swaymsg`; KDE: `kdotool`; X11: `xdotool`). GNOME has no stable title API. Learning from
-  in-field corrections is Mac-only for now (same as Windows).
-- **Global hotkey:** on Wayland Lipflow reads the keyboard from `/dev/input`, so your user needs
-  to be in the `input` group (log in again after adding it). X11 uses the same hook as Windows.
+| Action | Result |
+| --- | --- |
+| Hold **Right Option**, mouth words, release | Dictate and paste |
+| Double-tap **Right Option**, then tap again | Hands-free dictation |
+| Press **Esc** while listening | Cancel |
+| Menu → **Copy last dictation** or **Open history** | Retrieve previous output |
 
-### Most accurate: whisper mode
+Choose a different shortcut, camera, cleanup provider, or context settings in the app.
+Optional whisper mode uses local microphone audio together with the lip reader and
+downloads an additional audio-visual model. Ordinary silent dictation does not use audio.
 
-Settings → **Whisper mode**. While you hold the key, Lipflow also listens to a soft whisper and
-reads lips + audio together with the Auto-AVSR audio-visual model (downloaded the first time,
-1.8 GB). On test sentences, lips alone got 31.9% of words wrong; lips + audio got 6.9%. A real
-whisper is less clear than those test clips, so expect somewhere in between. The mic is only on
-while you hold the key.
-
-### Learning from your corrections
-
-When you fix a word Lipflow typed (within about 30 seconds), it saves that clip with your
-corrected sentence, and the next *Practice & train more* round uses it. Only the text field it
-pasted into is read. Switch it off in Settings.
-
-### Better accuracy: turn on LLM cleanup
-
-Lip reading can't tell apart words that look the same on the lips (p/b/m, f/v, t/d/n…), so the raw
-model output reads like "WALLET OFFICER" when you said "while in office". Lipflow sends the model's
-top-3 guesses plus your last few dictations to an LLM, which picks the sentence you meant and
-fixes casing, punctuation and numbers. You choose which one under **Cleanup** in the menu bar (tray
-on Windows), or with `--cleanup <name>` for one run. **Automatic**, the default, uses Claude if you've
-set a key, otherwise the on-device model, otherwise the offline rules.
-
-1. **Claude**: `export ANTHROPIC_API_KEY=…` (model `claude-opus-5-5` at low effort; override with
-   `LIPFLOW_MODEL`, e.g. `LIPFLOW_MODEL=claude-haiku-4-5` for lower latency). Best at fixing badly
-   mis-read sentences.
-2. **ChatGPT (Codex CLI)**: uses your ChatGPT plan, no API key. Install the
-   [Codex CLI](https://developers.openai.com/codex/cli) (`brew install --cask codex` or
-   `npm install -g @openai/codex`), run `codex login`, then pick it in the menu. Each sentence is one
-   read-only `codex exec` run in an empty folder. Override the model with `LIPFLOW_CODEX_MODEL`.
-3. **On-device model**: Qwen3-0.6B 4-bit running in-process on Apple Silicon
-   via MLX. About 350 MB, downloaded on first launch, and about 0.2 s per sentence, fully offline.
-   Tiny models copy the formatting they're shown, so this one gets lowercase guesses and a few
-   worked examples (`SMALL_SHOTS` in `cleanup.py`). Override with `LIPFLOW_LOCAL_MODEL`.
-4. **Ollama**: `ollama pull qwen3:4b`, then pick it in the menu (override with `LIPFLOW_OLLAMA_MODEL`).
-5. **Offline rules**: sentence case, "I", end punctuation, "nineteen forty three" → 1943.
-
-**Learn from your Wispr Flow history.** Most of what you'll mouth is stuff you already say.
+The command-line entry point is `thoughts-to-text`; `lipflow` remains a compatibility alias:
 
 ```sh
-uv run lipflow import-wispr     # or: --from-text my-writing.txt
+uv run thoughts-to-text --help
+uv run thoughts-to-text doctor
+uv run thoughts-to-text --cleanup codex
+uv run thoughts-to-text --copy-only
+uv run thoughts-to-text file talk.mp4 --start 10 --end 20
+uv run thoughts-to-text import-wispr
 ```
 
-This reads Wispr Flow's local database read-only, prints only counts, and saves your phrases to
-`~/Library/Application Support/Lipflow/phrases.txt`. Nothing leaves your Mac. Lipflow then:
-picks between the lip-reader's top 5 guesses using a small model of the word pairs you use;
-shows the cleanup model your past sentences closest to what it read; and adds names you
-capitalise often to your custom words for review. Restart Lipflow afterwards.
+Running from a terminal uses the terminal's macOS permissions. The native app has its own
+permission entries.
 
-**Custom words.** Names are the hardest thing to lip-read (a name is just lip shapes). Put yours
-in the Lipflow menu → *Edit custom words*, one per line (`~/Library/Application Support/Lipflow/words.txt`).
-A guess that contains one of your words wins over the others and gets your capitalization, and
-the LLM is told about them.
+## Screen context and privacy
 
-## Using it
+When surrounding context is enabled, the app reads the active window title and nearby
+text from the focused field through macOS Accessibility. With the separate screen-text
+option and Screen Recording permission enabled, it captures the target window once at
+dictation start and recognizes text with Apple Vision on this Mac. It does not capture
+the entire desktop. Recognized secure fields are skipped, and unavailable or slow OCR
+does not prevent dictation.
 
-| Do this | To |
-|---|---|
-| Hold **Right Option**, mouth the words, release | dictate |
-| Double-tap **Right Option** … tap again | hands-free (up to 60 s) |
-| **Esc** while listening | cancel |
-| Lipflow menu → Copy last dictation / Open history | get text back |
+Screenshots and OCR context stay in memory; the app does not save or upload screenshots.
+**Cloud cleanup sends text to the selected provider**, including the lip reader's guesses
+and relevant context such as visible text, names, recent dictations, or imported phrases.
+Choose local cleanup or offline rules to keep that processing on your computer. Disable
+screen text in Settings to stop screenshot capture, or turn off surrounding app text and
+names to disable surrounding app context. Recent dictations and personal vocabulary can
+still be used by cleanup.
 
-Lipflow keeps filming for 0.4 s after you release the key, because the model needs the frames
-after the last word to read it.
+Camera frames and optional whisper audio are processed locally. Practice clips,
+personalized models, phrases, settings, dictation history, and enabled correction-learning
+data are stored locally. Wispr Flow history import reads its local database; relevant
+imported phrases may later be used as cleanup context, including with a cloud provider.
 
-Options: `uv run lipflow --help`
+## Cleanup providers
 
-```
---key {right_option,left_option,right_command,right_control,fn}
---cleanup {auto,claude,local,ollama,basic}
---beam N          beam size (default 10)
---copy-only       copy to the clipboard instead of pasting
---camera N|FILE   camera index, or a video file to stand in for the webcam
-```
+Cleanup works with the lip reader's candidate sentences; it does not replace the visual
+speech model. A larger model or more context can still choose the wrong sentence.
 
-Lip-read a video file: `uv run lipflow file talk.mp4 --start 10 --end 20`
+| Provider | Processing | Setup |
+| --- | --- | --- |
+| ChatGPT through Codex CLI | Remote | Use an authenticated, compatible Codex installation; select it under Cleanup |
+| Claude | Remote | Set `ANTHROPIC_API_KEY`; select Claude |
+| Qwen through MLX | Local, Apple Silicon | Downloaded by setup or on first use |
+| Ollama | Local server at `127.0.0.1:11434` | Install a local model, such as `qwen3:4b` |
+| Offline rules | Local | No model or account needed |
 
-## How it works
+**Automatic** uses Claude when Anthropic credentials are present; otherwise it tries MLX,
+then Ollama, then offline rules. Choose a provider explicitly and check the active backend
+shown in the Cleanup menu when you need a particular processing location. If a requested
+backend is unavailable, the app can fall back to Automatic.
 
-- **Model:** [Auto-AVSR](https://github.com/mpc001/auto_avsr) visual-only speech recognition trained
-  on LRS3 (19.1% WER on the benchmark). A 3D-conv ResNet front end and a Conformer encoder feed a
-  Transformer decoder plus CTC, with a subword Transformer language model in the beam search.
-- **Preprocessing:** MediaPipe FaceLandmarker runs on every frame *while you're recording*, so
-  there's no second detection pass afterwards. Eye, nose-base and mouth anchors are aligned to the
-  training mean face, then 96×96 grayscale mouth crops are resampled to the 25 fps the model expects.
-- **Speed (M4 Pro, 9 s utterance):** encoder 0.16 s on the Apple GPU (it's 1.7 s on CPU), beam
-  search about 0.8–1.6 s on CPU (faster than MPS for thousands of tiny ops), for about 1–2 s from
-  release to text. Two patches to the vendored ESPnet help: cross-attention keys/values are
-  projected once per utterance instead of per hypothesis per step (25% faster beam search), and CTC
-  scoring works on any device.
+The Codex executable can be selected with `LIPFLOW_CODEX_BIN` or `codex_binary` in the
+app's `settings.json`; otherwise it is found on `PATH`. Select its model with
+`LIPFLOW_CODEX_MODEL` or `codex_model` in settings. Existing `LIPFLOW_*` provider overrides
+are retained for compatibility. Remote providers have their own account, usage, and
+data handling terms.
 
-Accuracy on held-out news footage (public-domain White House addresses), raw model output:
+## Data and logs
 
-| Said | Read |
-|---|---|
-| Born in New York City, and raised mostly in Chicago, Nancy Davis graduated from Smith College in 1943. | BORN IN NEW YORK CITY AND RAISED MOSTLY IN CHICAGO NANCY DAVIS GRADUATED FROM SMITH COLLEGE IN NINETEEN FORTY THREE |
-| …a real-life Hollywood romance with the love of her life, Ronald Reagan, whom she married in 1952. | ROMANCE WITH THE LOVE OF HER LIFE RONALD REAGAN WHOM SHE MARRIED IN NINETEEN FIFTY TWO |
-| Presidents have delivered some form of final message while in office - a farewell address to the American people. | PRESIDENTS HAVE DELIVERED SOME FORM OF FINAL MESSAGE WHILE IN OFFICE FAREWELL ADDRESS TO THE AMERICAN PEOPLE |
+| Platform | Personal data |
+| --- | --- |
+| macOS | `~/Library/Application Support/ThoughtsToText/` |
+| Windows | `%APPDATA%\ThoughtsToText\` |
+| Linux | `$XDG_DATA_HOME/ThoughtsToText/`, usually `~/.local/share/ThoughtsToText/` |
 
-Silently mouthed speech is harder than filmed speech (smaller lip movements), so expect more
-errors on your own webcam. That's what the LLM cleanup is for.
+Set `THOUGHTS_TO_TEXT_HOME` to use another data directory. The legacy `LIPFLOW_HOME`
+override is honored if the new variable is unset or empty. Without an explicit override,
+this fork uses separate personal data from Lipflow. Shared pretrained weights are loaded
+from this checkout's `models/` directory.
 
-## Development
+Native macOS app logs are in `~/Library/Logs/ThoughtsToText.log`.
+The app bundle is `/Applications/Thoughts-to-Text.app`, with bundle identifier
+`local.thoughtstotext.app`.
 
-```sh
-./setup.sh --samples      # also fetch the public-domain test clips
-uv run pytest             # the paste test is opt-in: LIPFLOW_TEST_PASTE=1
-```
+## Windows and Linux
 
-On Windows: `setup.ps1 -Samples`, then `uv run pytest`. CI runs the whole Windows setup and reads
-a real clip on every push (`.github/workflows/windows.yml`).
+The inherited cross-platform dictation paths are available; the new screen OCR integration
+is macOS-only. These platforms default to **Right Ctrl** for dictation and use window-title
+context.
 
-Code map: `lipflow/face.py` (landmarks → mouth crops), `vsr.py` (model), `camera.py`, `hotkey.py`
-(Quartz event tap; pynput's macOS listener crashes on recent macOS), `paste.py`, `hud.py`,
-`cleanup.py`, `app.py` (wiring + menu bar). Windows: `lipflow/win/` (tray app, overlay, setup
-window, pynput key hook, clipboard paste). Shared by both: `ptt.py` (key timing), `dictation.py`,
-`practice.py`. See `NOTICE` for bundled code and model licensing.
-The LRS3-trained weights are for non-commercial research use.
+On Windows, run `powershell -ExecutionPolicy Bypass -File setup.ps1` from this checkout,
+then open **Thoughts to Text** from the Start menu. Enable desktop camera access in Windows
+privacy settings if needed.
 
-## License
+On Linux, run `./setup-linux.sh`, then `uv run thoughts-to-text`. Wayland clipboard/paste
+requires `wl-clipboard` and `wtype` or `ydotool`; X11 requires `xclip` and `xdotool`.
+The tray requires PyGObject and an AppIndicator typelib. Wayland global hotkeys need access
+to the relevant `/dev/input` devices.
 
-MIT, see [LICENSE](LICENSE). Bundled third-party code keeps its own license, listed in
-[NOTICE](NOTICE). The model weights that setup.sh downloads come from the LRS3 dataset, which is
-for non-commercial research use only.
+MLX cleanup is Apple Silicon-only. Windows and Linux can use a remote cleanup provider,
+Ollama, or offline rules. Model execution uses the CPU unless a compatible GPU setup is
+available. Run `uv run thoughts-to-text doctor` for local diagnostics.
+
+## Model and attribution
+
+The visual speech model is the Auto-AVSR LRS3 `LRS3_V_WER19.1` checkpoint, with a convolutional
+front end, Conformer encoder, Transformer decoder, CTC, and a separate language model for
+beam search. Its published benchmark name is not a measured accuracy guarantee for silent
+dictation on your webcam. Training footage, lighting, pose, articulation, and vocabulary
+all affect results.
+
+This fork retains the Python package name `lipflow` and the upstream [MIT license](LICENSE),
+including Amy Zhou's copyright. See [NOTICE](NOTICE) for third-party code and model
+attributions, including [Auto-AVSR](https://github.com/mpc001/auto_avsr),
+[Visual Speech Recognition for Multiple Languages](https://github.com/mpc001/Visual_Speech_Recognition_for_Multiple_Languages),
+ESPnet, and Chaplin by Amanvir Parhar.
+
+The upstream NOTICE identifies LRS3 as licensed for non-commercial research and instructs
+users to treat the downloaded model weights accordingly. This fork does not change those
+restrictions or provide a commercially cleared model. Model weights are downloaded
+separately and are not covered by the application's MIT license.

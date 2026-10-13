@@ -13,22 +13,24 @@ pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="Linux only")
 
 
 def test_data_lives_in_xdg(monkeypatch):
+    monkeypatch.delenv("THOUGHTS_TO_TEXT_HOME", raising=False)
     monkeypatch.delenv("LIPFLOW_HOME", raising=False)
     monkeypatch.setenv("XDG_DATA_HOME", "/tmp/lipflow-xdg")
     import lipflow.paths as paths
     try:
-        assert importlib.reload(paths).HOME == "/tmp/lipflow-xdg/Lipflow"
+        assert importlib.reload(paths).HOME == "/tmp/lipflow-xdg/ThoughtsToText"
     finally:
         importlib.reload(paths)
 
 
 def test_xdg_default_is_local_share(monkeypatch):
+    monkeypatch.delenv("THOUGHTS_TO_TEXT_HOME", raising=False)
     monkeypatch.delenv("LIPFLOW_HOME", raising=False)
     monkeypatch.delenv("XDG_DATA_HOME", raising=False)
     monkeypatch.setenv("HOME", "/home/lipflow")
     import lipflow.paths as paths
     try:
-        assert importlib.reload(paths).HOME == "/home/lipflow/.local/share/Lipflow"
+        assert importlib.reload(paths).HOME == "/home/lipflow/.local/share/ThoughtsToText"
     finally:
         importlib.reload(paths)
 

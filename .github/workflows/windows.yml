@@ -24,7 +24,7 @@ jobs:
       - name: Shortcut points at the venv's pythonw
         shell: pwsh
         run: |
-          $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Lipflow.lnk"
+          $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Thoughts to Text.lnk"
           $t = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk).TargetPath
           Write-Host $t
           if (-not (Test-Path $t)) { throw "shortcut target missing: $t" }

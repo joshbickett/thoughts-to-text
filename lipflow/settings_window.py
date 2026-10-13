@@ -1,7 +1,8 @@
-"""Settings: keep training when you want to, plus the few options Lipflow has."""
+"""Training, dictation, and optional screen-context settings."""
 from __future__ import annotations
 
 import os
+import subprocess
 import time
 
 import objc
@@ -18,7 +19,7 @@ from .hud import ACCENT, GREEN, _glass, _rgb, symbol
 from .onboarding import GlassWindow, _text
 from .paths import HOME, PERSONAL_VSR
 
-SW, SH = 560, 700
+SW, SH = 620, 820
 
 
 def _capsule(target, title, action, frame, primary=False):
@@ -45,7 +46,7 @@ class Settings(NSObject):
         self.app = app
         self.win = GlassWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             NSMakeRect(0, 0, SW, SH), NSWindowStyleMaskBorderless, NSBackingStoreBuffered, False)
-        self.win.setTitle_("Lipflow Settings")
+        self.win.setTitle_("Thoughts to Text Settings")
         self.win.setMovableByWindowBackground_(True)
         self.win.setOpaque_(False)
         self.win.setBackgroundColor_(NSColor.clearColor())
@@ -101,8 +102,8 @@ class Settings(NSObject):
             line += f" Plus {nc} learned from your corrections."
         _text(p, NSMakeRect(36, y - 46, SW - 72, 40), line, 13, alpha=0.8)
         _text(p, NSMakeRect(36, y - 84, SW - 72, 36),
-              "Each round is 24 new sentences (about 5 minutes) and it retrains on everything you've recorded. "
-              "More rounds keep improving it.", 12, alpha=0.55)
+              "Each round is 24 new sentences (about 5 minutes). Training is kept only when it improves "
+              "the held-out practice score.", 12, alpha=0.55)
         p.addSubview_(_capsule(self, "Practice & train more", "trainMore:", NSMakeRect(36, y - 132, 220, 36), True))
         if os.path.exists(PERSONAL_VSR):
             p.addSubview_(_capsule(self, "Reset face model", "resetFace:", NSMakeRect(270, y - 132, 170, 36)))
@@ -119,22 +120,38 @@ class Settings(NSObject):
         cur = s.get("camera", "auto")
         cur_name = next((c["name"] for c in list_cameras() if c["id"] == cur), "Automatic (built-in)")
         self.cam_popup = self._popup(p, y - 82, "Camera", ["Automatic (built-in)"] + cams, cur_name, "pickCam:")
-        self.ctx_switch = self._switch(p, y - 124, "Use names from the app I'm typing in",
+        self.ctx_switch = self._switch(p, y - 124, "Use surrounding app text and names",
                                        s.get("use_context", True), "toggleContext:")
-        self.clip_switch = self._switch(p, y - 166, "Keep my last 100 clips to measure accuracy",
+        self.screen_switch = self._switch(p, y - 166, "Include visible screen text (processed locally)",
+                                          s.get("use_screen_context", True), "toggleScreenContext:")
+        self.screen_switch.setEnabled_(s.get("use_context", True))
+        from .screen_context import screen_capture_allowed
+        screen_ready = screen_capture_allowed()
+        if screen_ready:
+            _text(p, NSMakeRect(36, y - 200, SW - 72, 20),
+                  "Active window only, once per dictation. Screenshots are not saved.", 11.5, alpha=0.55)
+        else:
+            p.addSubview_(_capsule(self, "Allow screen access", "allowScreenContext:",
+                                  NSMakeRect(36, y - 204, 176, 28)))
+            _text(p, NSMakeRect(225, y - 207, SW - 261, 36),
+                  "Screen Recording permission enables this. Text-field context still works.", 11.5, alpha=0.55)
+        self.clip_switch = self._switch(p, y - 246, "Keep my last 100 clips to measure accuracy",
                                         s.get("save_clips", True), "toggleClips:")
-        self.learn_switch = self._switch(p, y - 208, "Learn from words I correct after pasting",
+        self.learn_switch = self._switch(p, y - 288, "Learn from words I correct after pasting",
                                          s.get("learn_corrections", True), "toggleLearn:")
-        self.whisper_switch = self._switch(p, y - 250, "Whisper mode: lips + a soft whisper (uses the mic)",
+        self.whisper_switch = self._switch(p, y - 330, "Whisper mode: lips + a soft whisper (uses the mic)",
                                            s.get("whisper", False), "toggleWhisper:")
-        _text(p, NSMakeRect(36, y - 288, SW - 72, 18), f"Cleanup: {self.app.cleaner.describe()}", 12, alpha=0.55)
+        _text(p, NSMakeRect(36, y - 368, SW - 72, 18), f"Cleanup: {self.app.cleaner.describe()}", 12, alpha=0.55)
+        _text(p, NSMakeRect(36, y - 405, SW - 72, 32),
+              "Screen text stays in memory. It is sent to a provider only if you choose cloud cleanup.",
+              11.5, alpha=0.55)
         p.addSubview_(_capsule(self, "Open my data folder", "openData:", NSMakeRect(36, 40, 190, 34)))
-        _text(p, NSMakeRect(240, 48, SW - 276, 18), "Clips, phrases, your trained models. Never uploaded.",
+        _text(p, NSMakeRect(240, 48, SW - 276, 18), "Your locally stored clips, phrases, and models.",
               11.5, alpha=0.5)
 
     @objc.python_method
     def _row_label(self, p, y, label):
-        _text(p, NSMakeRect(36, y + 6, 280, 20), label, 13.5)
+        _text(p, NSMakeRect(36, y + 6, SW - 140, 20), label, 13.5)
 
     @objc.python_method
     def _popup(self, p, y, label, items, current, action):
@@ -196,7 +213,20 @@ class Settings(NSObject):
 
     def toggleContext_(self, sender):
         self.app.settings["use_context"] = bool(sender.state())
+        self.screen_switch.setEnabled_(bool(sender.state()))
         self._save()
+
+    def toggleScreenContext_(self, sender):
+        self.app.settings["use_screen_context"] = bool(sender.state())
+        self._save()
+        if sender.state():
+            self.allowScreenContext_(sender)
+
+    def allowScreenContext_(self, sender):
+        from .screen_context import request_screen_capture_permission
+        if not request_screen_capture_permission():
+            subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture"])
+        self.build()
 
     def toggleClips_(self, sender):
         self.app.settings["save_clips"] = bool(sender.state())

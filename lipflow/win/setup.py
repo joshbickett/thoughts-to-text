@@ -190,14 +190,14 @@ class Setup:
         p = self._new_page("Learning your face",
                            ("Training runs on your graphics card" if gpu else
                             "Training runs on the processor, so it can take a while")
-                           + ". You can keep working; Lipflow is paused until it's done.", 2)
+                           + ". You can keep working; Thoughts to Text is paused until it's done.", 2)
         self.progress = ttk.Progressbar(p, length=WW - 160, maximum=100)
         self.progress.pack(pady=(40, 12))
         self.train_status = tk.Label(p, text="Starting…", fg=DIM, bg=BG, font=(FONT, 11), wraplength=WW - 120)
         self.train_status.pack()
         self.result = tk.Label(p, text="", fg=FG, bg=BG, font=(FONT, 13, "bold"), wraplength=WW - 120)
         self.result.pack(pady=18)
-        self.done_btn = self._button(p, "Start using Lipflow", self.finish, primary=True)
+        self.done_btn = self._button(p, "Start using Thoughts to Text", self.finish, primary=True)
         self.app.jobs.put(("train", self))
 
     def report(self, pct: float, text: str):  # model thread
@@ -228,4 +228,4 @@ class Setup:
         save_settings(s)
         self.app.settings["onboarded"] = True
         self.win.withdraw()
-        self.app.hud.show("done", "Lipflow is ready", f"Hold {self.app.key_name} anywhere and mouth your words", 3.0)
+        self.app.hud.show("done", "Thoughts to Text is ready", f"Hold {self.app.key_name} anywhere and mouth your words", 3.0)

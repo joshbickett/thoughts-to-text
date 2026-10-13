@@ -1,4 +1,4 @@
-# Lipflow for Windows: install dependencies, download the models (~1.2 GB) and add a Start menu shortcut.
+# Thoughts to Text for Windows: dependencies, models (~1.2 GB), and a Start menu shortcut.
 #   powershell -ExecutionPolicy Bypass -File setup.ps1 [-Samples] [-NoShortcut]
 param([switch]$Samples, [switch]$NoShortcut)
 $ErrorActionPreference = "Stop"
@@ -44,11 +44,11 @@ if ($Samples) {
 
 if (-not $NoShortcut) {
     # Start menu entry that runs the tray app without a console window
-    $data = Join-Path $env:APPDATA "Lipflow"
+    $data = Join-Path $env:APPDATA "ThoughtsToText"
     New-Item -ItemType Directory -Force -Path $data | Out-Null
-    $ico = Join-Path $data "Lipflow.ico"
+    $ico = Join-Path $data "ThoughtsToText.ico"
     uv run python -c "import sys; from lipflow.win.hud import tray_image; tray_image(size=256).save(sys.argv[1], sizes=[(16,16),(32,32),(48,48),(256,256)])" $ico
-    $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Lipflow.lnk"
+    $lnk = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\Thoughts to Text.lnk"
     $sh = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk)
     $sh.TargetPath = Join-Path $PSScriptRoot ".venv\Scripts\pythonw.exe"
     $sh.Arguments = "-X utf8 -m lipflow"
@@ -60,6 +60,6 @@ if (-not $NoShortcut) {
 }
 
 Write-Host ""
-Write-Host "Done. Open Lipflow from the Start menu (it lives in the system tray, next to the clock)."
+Write-Host "Done. Open Thoughts to Text from the Start menu (it lives in the system tray, next to the clock)."
 Write-Host "The first launch walks you through your Wispr Flow words and ~24 practice sentences."
-Write-Host "Check everything with:  uv run lipflow doctor"
+Write-Host "Check everything with:  uv run thoughts-to-text doctor"

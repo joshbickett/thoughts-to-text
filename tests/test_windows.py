@@ -12,10 +12,11 @@ pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="Windows only")
 def test_data_lives_in_appdata(monkeypatch):
     import importlib
     import lipflow.paths as paths
+    monkeypatch.delenv("THOUGHTS_TO_TEXT_HOME", raising=False)
     monkeypatch.delenv("LIPFLOW_HOME", raising=False)
     monkeypatch.setenv("APPDATA", r"C:\Users\me\AppData\Roaming")
     try:
-        assert importlib.reload(paths).HOME == r"C:\Users\me\AppData\Roaming\Lipflow"
+        assert importlib.reload(paths).HOME == r"C:\Users\me\AppData\Roaming\ThoughtsToText"
     finally:
         importlib.reload(paths)
 

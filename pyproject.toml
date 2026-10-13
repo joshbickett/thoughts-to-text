@@ -1,7 +1,7 @@
 [project]
-name = "lipflow"
+name = "thoughts-to-text"
 version = "0.1.0"
-description = "Wispr Flow, but for your lips: silent dictation from your webcam (macOS, Windows, and Linux)"
+description = "Silent dictation with local lip reading and surrounding text context"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "anthropic>=0.40",
@@ -17,6 +17,8 @@ dependencies = [
     "pyobjc-framework-avfoundation>=10.3; sys_platform == 'darwin'",
     "pyobjc-framework-cocoa>=10.3; sys_platform == 'darwin'",
     "pyobjc-framework-quartz>=10.3; sys_platform == 'darwin'",
+    "pyobjc-framework-Vision>=10.3; sys_platform == 'darwin'",
+    "pyobjc-framework-ScreenCaptureKit>=10.3; sys_platform == 'darwin'",
     "requests>=2.31",
     "sentencepiece>=0.2.2",
     "sounddevice>=0.5.6",
@@ -24,6 +26,7 @@ dependencies = [
 ]
 
 [project.scripts]
+thoughts-to-text = "lipflow.__main__:main"
 lipflow = "lipflow.__main__:main"
 
 [build-system]
